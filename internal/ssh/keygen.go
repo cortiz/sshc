@@ -31,7 +31,11 @@ func GenerateKey(path string, keyType KeyType, bits int, comment string, dryRun 
 	var err error
 
 	if dryRun {
-		fmt.Printf("[Dry-run] Would generate %s key (%d bits) at %s\n", keyType, bits, path)
+		if bits > 0 {
+			fmt.Printf("[Dry-run] Would generate %s key (%d bits) at %s\n", keyType, bits, path)
+		} else {
+			fmt.Printf("[Dry-run] Would generate %s key at %s\n", keyType, path)
+		}
 		return nil
 	}
 

@@ -546,6 +546,11 @@ func TestManager_ValidateContent(t *testing.T) {
 			wantErr: true,
 			errMsg:  "invalid value for 'ForwardAgent': maybe",
 		},
+		{
+			name:    "valid wildcard host without hostname",
+			content: "Host *\n  ForwardAgent yes\n  User admin",
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {

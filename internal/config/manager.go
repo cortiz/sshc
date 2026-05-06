@@ -289,7 +289,8 @@ func (m *Manager) ValidateContent(content string) error {
 	if host == "" {
 		errs = append(errs, "missing mandatory field 'Host'")
 	}
-	if hostname == "" {
+	// Host * is a special case for global defaults and doesn't require Hostname
+	if hostname == "" && host != "*" {
 		errs = append(errs, "missing mandatory field 'Hostname'")
 	}
 
@@ -457,7 +458,7 @@ func (opts ConfigOptions) String() string {
 }
 
 func quoteIfSpace(s string) string {
-	if strings.Contains(s, " ") {
+	if strings.ContainsAny(s, " \t") {
 		return "\"" + s + "\""
 	}
 	return s
@@ -503,7 +504,7 @@ func (m *Manager) checkDuplicateHost(host, currentConfigName string) error {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(strings.ToLower(trimmed), "host ") {
 				existingHost := strings.TrimSpace(trimmed[len("host "):])
-				if existingHost == host {
+				if strings.EqualFold(existingHost, host) {
 					return fmt.Errorf("host alias '%s' is already defined in config '%s'", host, name)
 				}
 			}

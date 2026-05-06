@@ -8,7 +8,6 @@
 - **Modular Management**: Keep separate config files for different projects or environments in `~/.ssh/sshc.d/`.
 - **Integrated Key Generation**: Automatically generate RSA, Ed25519, or ECDSA keys when adding new configurations.
 - **Git-like CLI**: Intuitive commands like `add`, `rm`, `list`, `show`, and `edit`.
-- **Modern Go**: Built with Go 1.26 using modern idioms and standard libraries.
 
 ## Installation
 

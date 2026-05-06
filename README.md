@@ -4,6 +4,8 @@
 
 ## Features
 
+![Demo](demo2.gif)
+
 - **Safe Initialization**: Automatically backs up your existing SSH config and sets up the `Include` directive.
 - **Modular Management**: Keep separate config files for different projects or environments in `~/.ssh/sshc.d/`.
 - **Integrated Key Generation**: Automatically generate RSA, Ed25519, or ECDSA keys when adding new configurations.

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sshc/internal/fileutil"
 	"strings"
 )
 
@@ -55,7 +56,7 @@ func (m *Manager) Init() error {
 				if err != nil {
 					return fmt.Errorf("failed to read ssh config for backup: %w", err)
 				}
-				if err := m.atomicWriteFile(backupFile, content, 0600); err != nil {
+				if err := fileutil.AtomicWriteFile(backupFile, content, 0600); err != nil {
 					return fmt.Errorf("failed to create backup: %w", err)
 				}
 			}
@@ -80,7 +81,7 @@ func (m *Manager) Init() error {
 				fmt.Printf("[Dry-run] Would prepend '%s' to %s\n", IncludeLine, configFile)
 			} else {
 				newContent := IncludeLine + "\n" + string(content)
-				if err := m.atomicWriteFile(configFile, []byte(newContent), 0600); err != nil {
+				if err := fileutil.AtomicWriteFile(configFile, []byte(newContent), 0600); err != nil {
 					return fmt.Errorf("failed to update ssh config: %w", err)
 				}
 			}
@@ -90,7 +91,7 @@ func (m *Manager) Init() error {
 		if m.DryRun {
 			fmt.Printf("[Dry-run] Would create %s with content: %s\n", configFile, IncludeLine)
 		} else {
-			if err := m.atomicWriteFile(configFile, []byte(IncludeLine+"\n"), 0600); err != nil {
+			if err := fileutil.AtomicWriteFile(configFile, []byte(IncludeLine+"\n"), 0600); err != nil {
 				return fmt.Errorf("failed to create ssh config: %w", err)
 			}
 		}
@@ -131,43 +132,9 @@ func (m *Manager) AddConfig(name string, content string) error {
 		fmt.Printf("[Dry-run] Would write config to %s:\n%s\n", configPath, content)
 		return nil
 	}
-	if err := m.atomicWriteFile(configPath, []byte(content), 0600); err != nil {
+	if err := fileutil.AtomicWriteFile(configPath, []byte(content), 0600); err != nil {
 		return fmt.Errorf("failed to write config %s: %w", name, err)
 	}
-	return nil
-}
-
-func (m *Manager) atomicWriteFile(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmpFile, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer func() {
-		if err != nil {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-
-	if err = tmpFile.Chmod(perm); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("failed to chmod temp file: %w", err)
-	}
-
-	if _, err = tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("failed to write to temp file: %w", err)
-	}
-
-	if err = tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed to close temp file: %w", err)
-	}
-
-	if err = os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("failed to rename temp file to target: %w", err)
-	}
-
 	return nil
 }
 
@@ -227,6 +194,7 @@ func (m *Manager) RemoveConfigWithKey(name string, deleteKey bool) (string, erro
 	return identityFile, nil
 }
 
+// ConfigOptions holds the fields that can be set or updated for an SSH configuration.
 type ConfigOptions struct {
 	Host         string
 	Hostname     string
@@ -237,6 +205,9 @@ type ConfigOptions struct {
 	ProxyJump    string
 }
 
+// Validate checks if the provided options are valid for creating a NEW configuration.
+// It requires mandatory fields like Host and Hostname.
+// For partial updates, use ValidatePartial instead.
 func (opts ConfigOptions) Validate() error {
 	var errs []string
 	if opts.Host == "" {
@@ -245,6 +216,22 @@ func (opts ConfigOptions) Validate() error {
 	if opts.Hostname == "" {
 		errs = append(errs, "mandatory field 'Hostname' (address) is missing")
 	}
+
+	if err := opts.ValidatePartial(); err != nil {
+		// Extract error messages from ValidatePartial and add them
+		errs = append(errs, strings.TrimPrefix(err.Error(), "validation failed:\n  - "))
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("validation failed:\n  - %s", strings.Join(errs, "\n  - "))
+	}
+	return nil
+}
+
+// ValidatePartial checks if the provided fields have valid values.
+// Unlike Validate, it does NOT check for mandatory fields, making it suitable for partial updates.
+func (opts ConfigOptions) ValidatePartial() error {
+	var errs []string
 	if opts.ForwardAgent != "" && opts.ForwardAgent != "yes" && opts.ForwardAgent != "no" {
 		errs = append(errs, "invalid value for 'ForwardAgent': must be 'yes' or 'no'")
 	}
@@ -258,6 +245,9 @@ func (opts ConfigOptions) Validate() error {
 	return nil
 }
 
+// ValidateContent parses and validates a raw SSH configuration string.
+// It ensures that the final state of a configuration file is valid, including mandatory fields.
+// This is used after manual edits or after applying programmatic updates.
 func (m *Manager) ValidateContent(content string) error {
 	lines := strings.Split(content, "\n")
 	var host, hostname string
@@ -316,15 +306,16 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		return err
 	}
 
+	// Pre-validate options upfront
+	if err := opts.ValidatePartial(); err != nil {
+		return err
+	}
+
 	if opts.Host != "" {
 		if err := m.checkDuplicateHost(opts.Host, name); err != nil {
 			return err
 		}
 	}
-
-	// For UpdateConfig, we should validate the resulting content
-	// but we can also pre-validate the options if they are provided.
-	// We'll validate the final content at the end of this function.
 
 	lines := strings.Split(string(content), "\n")
 	newLines := make([]string, 0, len(lines))
@@ -341,7 +332,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "hostname ") {
 			foundFields["hostname"] = true
 			if opts.Hostname != "" {
-				indent := line[:strings.Index(strings.ToLower(line), "hostname")]
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 				newLines = append(newLines, indent+"Hostname "+quoteIfSpace(opts.Hostname))
 			} else {
 				newLines = append(newLines, line)
@@ -349,7 +340,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "user ") {
 			foundFields["user"] = true
 			if opts.User != "" {
-				indent := line[:strings.Index(strings.ToLower(line), "user")]
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 				newLines = append(newLines, indent+"User "+quoteIfSpace(opts.User))
 			} else {
 				newLines = append(newLines, line)
@@ -357,7 +348,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "port ") {
 			foundFields["port"] = true
 			if opts.Port != 0 {
-				indent := line[:strings.Index(strings.ToLower(line), "port")]
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 				newLines = append(newLines, indent+fmt.Sprintf("Port %d", opts.Port))
 			} else {
 				newLines = append(newLines, line)
@@ -370,7 +361,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 				if absPath, err := filepath.Abs(identity); err == nil {
 					identity = absPath
 				}
-				indent := line[:strings.Index(strings.ToLower(line), "identityfile")]
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 				newLines = append(newLines, indent+"IdentityFile "+quoteIfSpace(identity))
 			} else {
 				newLines = append(newLines, line)
@@ -378,7 +369,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "forwardagent ") {
 			foundFields["forwardagent"] = true
 			if opts.ForwardAgent != "" {
-				indent := line[:strings.Index(strings.ToLower(line), "forwardagent")]
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 				newLines = append(newLines, indent+"ForwardAgent "+opts.ForwardAgent)
 			} else {
 				newLines = append(newLines, line)
@@ -386,7 +377,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "proxyjump ") {
 			foundFields["proxyjump"] = true
 			if opts.ProxyJump != "" {
-				indent := line[:strings.Index(strings.ToLower(line), "proxyjump")]
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 				newLines = append(newLines, indent+"ProxyJump "+quoteIfSpace(opts.ProxyJump))
 			} else {
 				newLines = append(newLines, line)
@@ -432,7 +423,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		return nil
 	}
 
-	return m.atomicWriteFile(path, []byte(updatedContent), 0600)
+	return fileutil.AtomicWriteFile(path, []byte(updatedContent), 0600)
 }
 
 func (opts ConfigOptions) String() string {

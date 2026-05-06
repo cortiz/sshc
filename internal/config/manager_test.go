@@ -480,8 +480,8 @@ func TestManager_UpdateConfig_Indentation(t *testing.T) {
 	_ = m.Init()
 
 	name := "indent-test"
-	// Use 8 spaces for indentation
-	initialContent := "Host my-host\n        Hostname old-hostname\n"
+	// Use mix of tabs and spaces
+	initialContent := "Host my-host\n\t  Hostname old-hostname\n"
 	if err := m.AddConfig(name, initialContent); err != nil {
 		t.Fatal(err)
 	}
@@ -501,8 +501,8 @@ func TestManager_UpdateConfig_Indentation(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "Hostname") {
-			if !strings.HasPrefix(line, "        ") {
-				t.Errorf("Indentation lost. Expected 8 spaces at start of line: %q", line)
+			if !strings.HasPrefix(line, "\t  ") {
+				t.Errorf("Indentation lost or incorrect. Expected \"\\t  \" at start of line: %q", line)
 			}
 		}
 	}
@@ -596,6 +596,44 @@ func TestConfigOptions_Validate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := tt.opts.Validate(); (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestConfigOptions_ValidatePartial(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    ConfigOptions
+		wantErr bool
+	}{
+		{
+			name: "valid partial",
+			opts: ConfigOptions{
+				User: "admin",
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid port",
+			opts: ConfigOptions{
+				Port: 70000,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid forwardagent",
+			opts: ConfigOptions{
+				ForwardAgent: "maybe",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.opts.ValidatePartial(); (err != nil) != tt.wantErr {
+				t.Errorf("ValidatePartial() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

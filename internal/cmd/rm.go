@@ -27,22 +27,32 @@ var rmConfigCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		m.SetDryRun(dryRun)
 
 		idFile, err := m.RemoveConfigWithKey(name, deleteKey)
 		if err != nil {
 			return err
 		}
 
+		statusStr := "removed"
+		if dryRun {
+			statusStr = "would be removed"
+		}
+
 		if deleteKey {
 			if idFile != "" {
-				fmt.Printf("Config %s and its key %s removed successfully\n", name, idFile)
+				fmt.Printf("Config %s and its key %s %s successfully\n", name, idFile, statusStr)
 			} else {
-				fmt.Printf("Config %s removed successfully (no identity file found to delete)\n", name)
+				fmt.Printf("Config %s %s successfully (no identity file found to delete)\n", name, statusStr)
 			}
 		} else {
-			fmt.Printf("Config %s removed successfully\n", name)
+			fmt.Printf("Config %s %s successfully\n", name, statusStr)
 			if idFile != "" {
-				fmt.Printf("Warning: SSH key %s was not deleted. Use --delete-key to remove it.\n", idFile)
+				if dryRun {
+					fmt.Printf("[Dry-run] Warning: SSH key %s would not be deleted. Use --delete-key to remove it.\n", idFile)
+				} else {
+					fmt.Printf("Warning: SSH key %s was not deleted. Use --delete-key to remove it.\n", idFile)
+				}
 			}
 		}
 

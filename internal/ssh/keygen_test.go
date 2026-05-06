@@ -28,7 +28,7 @@ func TestGenerateKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(string(tt.keyType), func(t *testing.T) {
 			path := filepath.Join(tmpDir, tt.name)
-			if err := GenerateKey(path, tt.keyType, tt.bits, tt.comment); err != nil {
+			if err := GenerateKey(path, tt.keyType, tt.bits, tt.comment, false); err != nil {
 				t.Errorf("GenerateKey() error = %v", err)
 			}
 

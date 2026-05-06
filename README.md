@@ -7,6 +7,7 @@
 - **Safe Initialization**: Automatically backs up your existing SSH config and sets up the `Include` directive.
 - **Modular Management**: Keep separate config files for different projects or environments in `~/.ssh/sshc.d/`.
 - **Integrated Key Generation**: Automatically generate RSA, Ed25519, or ECDSA keys when adding new configurations.
+- **Dry-run Support**: Preview changes before applying them with the global `--dry-run` or `-n` flag.
 - **Git-like CLI**: Intuitive commands like `add`, `rm`, `list`, `show`, and `edit`.
 
 ## Installation
@@ -33,6 +34,17 @@ The first step is to prepare your environment. This command creates `~/.ssh/sshc
 
 ```bash
 sshc init
+```
+
+### Global Options
+
+`sshc` supports the following global flags:
+
+- `--dry-run`, `-n`: Show what would be done without making any changes.
+
+Example:
+```bash
+sshc add config test --host test.com --dry-run
 ```
 
 ### 2. Add a Configuration

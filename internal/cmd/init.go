@@ -17,10 +17,15 @@ var initCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		m.SetDryRun(dryRun)
 		if err := m.Init(); err != nil {
 			return err
 		}
-		fmt.Println("sshc initialized successfully")
+		if dryRun {
+			fmt.Println("sshc initialization (dry-run) completed")
+		} else {
+			fmt.Println("sshc initialized successfully")
+		}
 		return nil
 	},
 }

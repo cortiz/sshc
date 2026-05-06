@@ -38,6 +38,7 @@ var addConfigCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		m.SetDryRun(dryRun)
 
 		idFile := identity
 		if createKey {
@@ -47,8 +48,12 @@ var addConfigCmd = &cobra.Command{
 					return err
 				}
 			}
-			fmt.Printf("Generating %s key at %s...\n", keyType, idFile)
-			err = ssh.GenerateKey(idFile, ssh.KeyType(keyType), keySize, keyComment)
+			if dryRun {
+				fmt.Printf("[Dry-run] Would generate %s key at %s...\n", keyType, idFile)
+			} else {
+				fmt.Printf("Generating %s key at %s...\n", keyType, idFile)
+			}
+			err = ssh.GenerateKey(idFile, ssh.KeyType(keyType), keySize, keyComment, dryRun)
 			if err != nil {
 				return fmt.Errorf("failed to generate key: %w", err)
 			}
@@ -72,7 +77,11 @@ var addConfigCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Config %s added successfully\n", name)
+		if dryRun {
+			fmt.Printf("Config %s would be added successfully (dry-run)\n", name)
+		} else {
+			fmt.Printf("Config %s added successfully\n", name)
+		}
 		return nil
 	},
 }

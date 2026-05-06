@@ -24,10 +24,15 @@ const (
 	ECDSA   KeyType = "ecdsa"
 )
 
-func GenerateKey(path string, keyType KeyType, bits int, comment string) error {
+func GenerateKey(path string, keyType KeyType, bits int, comment string, dryRun bool) error {
 	var privateKey any
 	var publicKey ssh.PublicKey
 	var err error
+
+	if dryRun {
+		fmt.Printf("[Dry-run] Would generate %s key (%d bits) at %s\n", keyType, bits, path)
+		return nil
+	}
 
 	switch keyType {
 	case RSA:

@@ -37,6 +37,7 @@ var editConfigCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		m.SetDryRun(dryRun)
 
 		configPath := m.GetConfigPath(name)
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -59,7 +60,20 @@ var editConfigCmd = &cobra.Command{
 				ForwardAgent: editForwardAgent,
 				ProxyJump:    editProxyJump,
 			}
-			return m.UpdateConfig(name, opts)
+			if err := m.UpdateConfig(name, opts); err != nil {
+				return err
+			}
+			if dryRun {
+				fmt.Printf("Config %s would be updated successfully (dry-run)\n", name)
+			} else {
+				fmt.Printf("Config %s updated successfully\n", name)
+			}
+			return nil
+		}
+
+		if dryRun {
+			fmt.Printf("[Dry-run] Would open editor for %s\n", configPath)
+			return nil
 		}
 
 		return openEditor(configPath)

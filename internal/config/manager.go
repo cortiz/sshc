@@ -15,6 +15,7 @@ const (
 
 type Manager struct {
 	SshDir string
+	DryRun bool
 }
 
 func NewManager() (*Manager, error) {
@@ -27,10 +28,18 @@ func NewManager() (*Manager, error) {
 	}, nil
 }
 
+func (m *Manager) SetDryRun(dryRun bool) {
+	m.DryRun = dryRun
+}
+
 func (m *Manager) Init() error {
 	sshcDir := filepath.Join(m.SshDir, SshcDirName)
-	if err := os.MkdirAll(sshcDir, 0700); err != nil {
-		return fmt.Errorf("failed to create sshc directory: %w", err)
+	if m.DryRun {
+		fmt.Printf("[Dry-run] Would create directory: %s\n", sshcDir)
+	} else {
+		if err := os.MkdirAll(sshcDir, 0700); err != nil {
+			return fmt.Errorf("failed to create sshc directory: %w", err)
+		}
 	}
 
 	configFile := filepath.Join(m.SshDir, "config")
@@ -39,12 +48,16 @@ func (m *Manager) Init() error {
 	if _, err := os.Stat(configFile); err == nil {
 		// 1. backup current ssh config if backup doesn't exist
 		if _, err := os.Stat(backupFile); os.IsNotExist(err) {
-			content, err := os.ReadFile(configFile)
-			if err != nil {
-				return fmt.Errorf("failed to read ssh config for backup: %w", err)
-			}
-			if err := os.WriteFile(backupFile, content, 0600); err != nil {
-				return fmt.Errorf("failed to create backup: %w", err)
+			if m.DryRun {
+				fmt.Printf("[Dry-run] Would backup %s to %s\n", configFile, backupFile)
+			} else {
+				content, err := os.ReadFile(configFile)
+				if err != nil {
+					return fmt.Errorf("failed to read ssh config for backup: %w", err)
+				}
+				if err := os.WriteFile(backupFile, content, 0600); err != nil {
+					return fmt.Errorf("failed to create backup: %w", err)
+				}
 			}
 		}
 
@@ -63,15 +76,23 @@ func (m *Manager) Init() error {
 		}
 
 		if !found {
-			newContent := IncludeLine + "\n" + string(content)
-			if err := os.WriteFile(configFile, []byte(newContent), 0600); err != nil {
-				return fmt.Errorf("failed to update ssh config: %w", err)
+			if m.DryRun {
+				fmt.Printf("[Dry-run] Would prepend '%s' to %s\n", IncludeLine, configFile)
+			} else {
+				newContent := IncludeLine + "\n" + string(content)
+				if err := os.WriteFile(configFile, []byte(newContent), 0600); err != nil {
+					return fmt.Errorf("failed to update ssh config: %w", err)
+				}
 			}
 		}
 	} else if os.IsNotExist(err) {
 		// Create a new ssh config with the include
-		if err := os.WriteFile(configFile, []byte(IncludeLine+"\n"), 0600); err != nil {
-			return fmt.Errorf("failed to create ssh config: %w", err)
+		if m.DryRun {
+			fmt.Printf("[Dry-run] Would create %s with content: %s\n", configFile, IncludeLine)
+		} else {
+			if err := os.WriteFile(configFile, []byte(IncludeLine+"\n"), 0600); err != nil {
+				return fmt.Errorf("failed to create ssh config: %w", err)
+			}
 		}
 	} else {
 		return fmt.Errorf("failed to stat ssh config: %w", err)
@@ -86,6 +107,10 @@ func (m *Manager) GetConfigPath(name string) string {
 
 func (m *Manager) AddConfig(name string, content string) error {
 	configPath := m.GetConfigPath(name)
+	if m.DryRun {
+		fmt.Printf("[Dry-run] Would write config to %s:\n%s\n", configPath, content)
+		return nil
+	}
 	if err := os.WriteFile(configPath, []byte(content), 0600); err != nil {
 		return fmt.Errorf("failed to write config %s: %w", name, err)
 	}
@@ -116,15 +141,25 @@ func (m *Manager) RemoveConfigWithKey(name string, deleteKey bool) (string, erro
 		}
 	}
 
-	if err := os.Remove(configPath); err != nil {
-		return "", fmt.Errorf("failed to remove config %s: %w", name, err)
+	if deleteKey && identityFile != "" {
+		if m.DryRun {
+			fmt.Printf("[Dry-run] Would remove private key: %s\n", identityFile)
+			fmt.Printf("[Dry-run] Would remove public key: %s.pub\n", identityFile)
+		} else {
+			// Try to remove the private key
+			_ = os.Remove(identityFile)
+			// Try to remove the public key
+			_ = os.Remove(identityFile + ".pub")
+		}
 	}
 
-	if deleteKey && identityFile != "" {
-		// Try to remove the private key
-		_ = os.Remove(identityFile)
-		// Try to remove the public key
-		_ = os.Remove(identityFile + ".pub")
+	if m.DryRun {
+		fmt.Printf("[Dry-run] Would remove config file: %s\n", configPath)
+		return identityFile, nil
+	}
+
+	if err := os.Remove(configPath); err != nil {
+		return "", fmt.Errorf("failed to remove config %s: %w", name, err)
 	}
 
 	return identityFile, nil
@@ -241,6 +276,11 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 	}
 	if !foundFields["proxyjump"] && opts.ProxyJump != "" {
 		newLines = append(newLines, "    ProxyJump "+opts.ProxyJump)
+	}
+
+	if m.DryRun {
+		fmt.Printf("[Dry-run] Would update config at %s with:\n%s\n", path, strings.Join(newLines, "\n"))
+		return nil
 	}
 
 	return os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0600)

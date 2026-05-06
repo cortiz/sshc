@@ -92,7 +92,7 @@ func GenerateKey(path string, keyType KeyType, bits int, comment string, dryRun 
 		Type:  "PRIVATE KEY",
 		Bytes: privBytes,
 	}
-	if err := os.WriteFile(path, pem.EncodeToMemory(privBlock), 0600); err != nil {
+	if err := atomicWriteFile(path, pem.EncodeToMemory(privBlock), 0600); err != nil {
 		return err
 	}
 
@@ -103,8 +103,42 @@ func GenerateKey(path string, keyType KeyType, bits int, comment string, dryRun 
 		content := strings.TrimSpace(string(pubBytes))
 		pubBytes = []byte(fmt.Sprintf("%s %s\n", content, comment))
 	}
-	if err := os.WriteFile(path+".pub", pubBytes, 0644); err != nil {
+	if err := atomicWriteFile(path+".pub", pubBytes, 0644); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmpFile, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if err = tmpFile.Chmod(perm); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to chmod temp file: %w", err)
+	}
+
+	if _, err = tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to write to temp file: %w", err)
+	}
+
+	if err = tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	if err = os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("failed to rename temp file to target: %w", err)
 	}
 
 	return nil

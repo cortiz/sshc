@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"sshc/internal/config"
 	"sshc/internal/ssh"
@@ -41,6 +42,12 @@ var addConfigCmd = &cobra.Command{
 		m.SetDryRun(dryRun)
 
 		idFile := identity
+		if idFile != "" && !createKey {
+			if _, err := os.Stat(idFile); os.IsNotExist(err) {
+				fmt.Printf("Warning: IdentityFile %s does not exist\n", idFile)
+			}
+		}
+
 		if createKey {
 			if idFile == "" {
 				idFile, err = ssh.GetDefaultKeyPath(name)
@@ -71,6 +78,10 @@ var addConfigCmd = &cobra.Command{
 			IdentityFile: idFile,
 			ForwardAgent: forwardAgent,
 			ProxyJump:    proxyJump,
+		}
+
+		if err := opts.Validate(); err != nil {
+			return err
 		}
 
 		if err := m.AddConfig(name, opts.String()); err != nil {

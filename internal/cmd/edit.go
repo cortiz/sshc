@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 
 	"sshc/internal/config"
 
@@ -51,6 +52,11 @@ var editConfigCmd = &cobra.Command{
 		})
 
 		if hasFlag {
+			if editIdentity != "" {
+				if _, err := os.Stat(editIdentity); os.IsNotExist(err) {
+					fmt.Printf("Warning: IdentityFile %s does not exist\n", editIdentity)
+				}
+			}
 			opts := config.ConfigOptions{
 				Host:         editHost,
 				Hostname:     editHostname,
@@ -76,7 +82,16 @@ var editConfigCmd = &cobra.Command{
 			return nil
 		}
 
-		return openEditor(configPath)
+		if err := openEditor(configPath); err != nil {
+			return err
+		}
+
+		// Re-read and validate after editing
+		newContent, err := os.ReadFile(configPath)
+		if err != nil {
+			return err
+		}
+		return m.ValidateContent(string(newContent))
 	},
 }
 
@@ -90,7 +105,14 @@ func openEditor(path string) error {
 		}
 	}
 
-	cmd := exec.Command(editor, path)
+	// Split editor if it contains arguments
+	editorParts := strings.Fields(editor)
+	if len(editorParts) == 0 {
+		return fmt.Errorf("invalid EDITOR environment variable")
+	}
+
+	args := append(editorParts[1:], path)
+	cmd := exec.Command(editorParts[0], args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

@@ -113,6 +113,72 @@ func TestManager_Init_Backup(t *testing.T) {
 	}
 }
 
+func TestManager_AddConfig_DuplicateHost(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sshc-test-dup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	m := &Manager{
+		SshDir: tmpDir,
+	}
+	_ = m.Init()
+
+	// 1. Add first config
+	if err := m.AddConfig("config1", "Host myalias\n  Hostname host1.com"); err != nil {
+		t.Fatalf("Failed to add first config: %v", err)
+	}
+
+	// 2. Add second config with same Host alias
+	err = m.AddConfig("config2", "Host myalias\n  Hostname host2.com")
+	if err == nil {
+		t.Error("Expected error when adding config with duplicate Host alias, got nil")
+	} else if !strings.Contains(err.Error(), "already defined") {
+		t.Errorf("Expected 'already defined' error, got: %v", err)
+	}
+}
+
+func TestManager_UpdateConfig_DuplicateHost(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sshc-test-dup-update")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	m := &Manager{
+		SshDir: tmpDir,
+	}
+	_ = m.Init()
+
+	// 1. Add two configs
+	if err := m.AddConfig("config1", "Host alias1\n  Hostname host1.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddConfig("config2", "Host alias2\n  Hostname host2.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Update config2 to use alias1
+	opts := ConfigOptions{
+		Host: "alias1",
+	}
+	err = m.UpdateConfig("config2", opts)
+	if err == nil {
+		t.Error("Expected error when updating config to a duplicate Host alias, got nil")
+	} else if !strings.Contains(err.Error(), "already defined") {
+		t.Errorf("Expected 'already defined' error, got: %v", err)
+	}
+
+	// 3. Update config2 to its own alias (should be fine)
+	opts = ConfigOptions{
+		Host: "alias2",
+	}
+	if err := m.UpdateConfig("config2", opts); err != nil {
+		t.Errorf("Updating to same alias should not fail: %v", err)
+	}
+}
+
 func TestManager_AddRemoveConfig(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "sshc-test")
 	if err != nil {
@@ -164,7 +230,7 @@ func TestManager_RemoveConfig_WithKey(t *testing.T) {
 
 	name := "key-config"
 	keyPath := filepath.Join(tmpDir, "test-key")
-	content := "Host test\n  IdentityFile " + keyPath
+	content := "Host test\n  Hostname example.com\n  IdentityFile " + keyPath
 
 	// Create dummy key files
 	if err := os.WriteFile(keyPath, []byte("private"), 0600); err != nil {
@@ -213,6 +279,36 @@ func TestManager_RemoveConfig_WithKey(t *testing.T) {
 	}
 }
 
+func TestManager_RemoveConfig_NonExistentKey(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sshc-test-rm-no-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	m := &Manager{
+		SshDir: tmpDir,
+	}
+	_ = m.Init()
+
+	name := "no-key-config"
+	keyPath := filepath.Join(tmpDir, "non-existent-key")
+	content := "Host test\n  Hostname example.com\n  IdentityFile " + keyPath
+
+	if err := m.AddConfig(name, content); err != nil {
+		t.Fatal(err)
+	}
+
+	// Remove config, idFile should be empty because keyPath doesn't exist
+	idFile, err := m.RemoveConfigWithKey(name, false)
+	if err != nil {
+		t.Errorf("RemoveConfigWithKey() error = %v", err)
+	}
+	if idFile != "" {
+		t.Errorf("Expected empty idFile for non-existent key, got %s", idFile)
+	}
+}
+
 func TestManager_ListConfigs_Sorted(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "sshc-test-list")
 	if err != nil {
@@ -228,7 +324,7 @@ func TestManager_ListConfigs_Sorted(t *testing.T) {
 	// Add configs in non-alphabetical order
 	names := []string{"zebra", "apple", "banana"}
 	for _, name := range names {
-		if err := m.AddConfig(name, "Host "+name); err != nil {
+		if err := m.AddConfig(name, "Host "+name+"\n  Hostname "+name+".com"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -257,7 +353,7 @@ func TestManager_UpdateConfig(t *testing.T) {
 	_ = m.Init()
 
 	name := "update-test"
-	initialContent := "Host old-host\n    User old-user\n"
+	initialContent := "Host old-host\n    Hostname old-address\n    User old-user\n"
 	if err := m.AddConfig(name, initialContent); err != nil {
 		t.Fatal(err)
 	}
@@ -334,6 +430,43 @@ func TestManager_UpdateConfig(t *testing.T) {
 	}
 }
 
+func TestManager_ConfigWithSpaces(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sshc-test-spaces")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	m := &Manager{
+		SshDir: tmpDir,
+	}
+	_ = m.Init()
+
+	name := "space-test"
+	opts := ConfigOptions{
+		Host:     "my alias",
+		Hostname: "example.com",
+		User:     "user with space",
+	}
+
+	if err := m.AddConfig(name, opts.String()); err != nil {
+		t.Fatalf("AddConfig() error = %v", err)
+	}
+
+	content, err := os.ReadFile(m.GetConfigPath(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := string(content)
+	if !strings.Contains(res, "Host \"my alias\"") {
+		t.Errorf("Expected quoted Host, got: %q", res)
+	}
+	if !strings.Contains(res, "User \"user with space\"") {
+		t.Errorf("Expected quoted User, got: %q", res)
+	}
+}
+
 func TestManager_UpdateConfig_Indentation(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "sshc-test-indent")
 	if err != nil {
@@ -372,5 +505,98 @@ func TestManager_UpdateConfig_Indentation(t *testing.T) {
 				t.Errorf("Indentation lost. Expected 8 spaces at start of line: %q", line)
 			}
 		}
+	}
+}
+
+func TestManager_ValidateContent(t *testing.T) {
+	m := &Manager{}
+
+	tests := []struct {
+		name    string
+		content string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "valid config",
+			content: "Host test\n  Hostname example.com\n  User admin",
+			wantErr: false,
+		},
+		{
+			name:    "missing host",
+			content: "Hostname example.com\n  User admin",
+			wantErr: true,
+			errMsg:  "missing mandatory field 'Host'",
+		},
+		{
+			name:    "missing hostname",
+			content: "Host test\n  User admin",
+			wantErr: true,
+			errMsg:  "missing mandatory field 'Hostname'",
+		},
+		{
+			name:    "invalid port",
+			content: "Host test\n  Hostname example.com\n  Port 70000",
+			wantErr: true,
+			errMsg:  "invalid port: 70000",
+		},
+		{
+			name:    "invalid forwardagent",
+			content: "Host test\n  Hostname example.com\n  ForwardAgent maybe",
+			wantErr: true,
+			errMsg:  "invalid value for 'ForwardAgent': maybe",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := m.ValidateContent(tt.content)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateContent() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && !strings.Contains(err.Error(), tt.errMsg) {
+				t.Errorf("ValidateContent() error = %v, want error containing %q", err, tt.errMsg)
+			}
+		})
+	}
+}
+
+func TestConfigOptions_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    ConfigOptions
+		wantErr bool
+	}{
+		{
+			name: "valid options",
+			opts: ConfigOptions{
+				Host:     "test",
+				Hostname: "example.com",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing host",
+			opts: ConfigOptions{
+				Hostname: "example.com",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing hostname",
+			opts: ConfigOptions{
+				Host: "test",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.opts.Validate(); (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }

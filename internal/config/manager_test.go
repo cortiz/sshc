@@ -150,6 +150,69 @@ func TestManager_AddRemoveConfig(t *testing.T) {
 	}
 }
 
+func TestManager_RemoveConfig_WithKey(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sshc-test-rm-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	m := &Manager{
+		SshDir: tmpDir,
+	}
+	_ = m.Init()
+
+	name := "key-config"
+	keyPath := filepath.Join(tmpDir, "test-key")
+	content := "Host test\n  IdentityFile " + keyPath
+
+	// Create dummy key files
+	if err := os.WriteFile(keyPath, []byte("private"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath+".pub", []byte("public"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.AddConfig(name, content); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Remove WITHOUT deleting key
+	idFile, err := m.RemoveConfigWithKey(name, false)
+	if err != nil {
+		t.Errorf("RemoveConfigWithKey(false) error = %v", err)
+	}
+	if idFile != keyPath {
+		t.Errorf("Expected idFile %s, got %s", keyPath, idFile)
+	}
+
+	// Verify key still exists
+	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+		t.Errorf("Key should still exist")
+	}
+
+	// 2. Add back and remove WITH deleting key
+	if err := m.AddConfig(name, content); err != nil {
+		t.Fatal(err)
+	}
+	idFile, err = m.RemoveConfigWithKey(name, true)
+	if err != nil {
+		t.Errorf("RemoveConfigWithKey(true) error = %v", err)
+	}
+	if idFile != keyPath {
+		t.Errorf("Expected idFile %s, got %s", keyPath, idFile)
+	}
+
+	// Verify key is deleted
+	if _, err := os.Stat(keyPath); !os.IsNotExist(err) {
+		t.Errorf("Key should be deleted")
+	}
+	if _, err := os.Stat(keyPath + ".pub"); !os.IsNotExist(err) {
+		t.Errorf("Public key should be deleted")
+	}
+}
+
 func TestManager_ListConfigs_Sorted(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "sshc-test-list")
 	if err != nil {

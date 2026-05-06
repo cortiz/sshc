@@ -93,14 +93,41 @@ func (m *Manager) AddConfig(name string, content string) error {
 }
 
 func (m *Manager) RemoveConfig(name string) error {
+	_, err := m.RemoveConfigWithKey(name, false)
+	return err
+}
+
+func (m *Manager) RemoveConfigWithKey(name string, deleteKey bool) (string, error) {
 	configPath := m.GetConfigPath(name)
-	if err := os.Remove(configPath); err != nil {
+	content, err := os.ReadFile(configPath)
+	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("config %s does not exist", name)
+			return "", fmt.Errorf("config %s does not exist", name)
 		}
-		return fmt.Errorf("failed to remove config %s: %w", name, err)
+		return "", fmt.Errorf("failed to read config %s: %w", name, err)
 	}
-	return nil
+
+	var identityFile string
+	for line := range strings.SplitSeq(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(trimmed), "identityfile ") {
+			identityFile = strings.TrimSpace(trimmed[len("identityfile "):])
+			break
+		}
+	}
+
+	if err := os.Remove(configPath); err != nil {
+		return "", fmt.Errorf("failed to remove config %s: %w", name, err)
+	}
+
+	if deleteKey && identityFile != "" {
+		// Try to remove the private key
+		_ = os.Remove(identityFile)
+		// Try to remove the public key
+		_ = os.Remove(identityFile + ".pub")
+	}
+
+	return identityFile, nil
 }
 
 type ConfigOptions struct {

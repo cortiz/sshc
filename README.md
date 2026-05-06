@@ -75,6 +75,9 @@ sshc edit config my-server --user new-admin --host new-example.com
 
 # Remove a managed config
 sshc rm config my-server
+
+# Remove a config and its associated SSH key
+sshc rm config my-server --delete-key
 ```
 
 ## Examples

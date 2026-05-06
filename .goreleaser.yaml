@@ -34,7 +34,23 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 changelog:
   sort: asc
+  use: git
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: 'Bug fixes'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Improvements
+      regexp: "^.*refactor[(\\w)]*:+.*$"
+      order: 2
+    - title: Others
+      order: 999
   filters:
     exclude:
       - '^docs:'
       - '^test:'
+      - '^chore:'
+      - 'merge'
+      - 'Merge'

@@ -90,6 +90,27 @@ func TestManager_Init_Backup(t *testing.T) {
 	if count != 1 {
 		t.Errorf("Include line found %d times, expected 1", count)
 	}
+
+	// Verify that backup was NOT overwritten
+	// 1. Change the config content
+	newConfigContent := "Host new\n  Hostname updated.com"
+	if err := os.WriteFile(filepath.Join(tmpDir, "config"), []byte(newConfigContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Run Init again
+	if err := m.Init(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Backup should still have the ORIGINAL content, not the newConfigContent
+	backupContentAfter, err := os.ReadFile(filepath.Join(tmpDir, "config.backup"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(backupContentAfter) != initialContent {
+		t.Errorf("Backup was overwritten! Got: %s, Want: %s", string(backupContentAfter), initialContent)
+	}
 }
 
 func TestManager_AddRemoveConfig(t *testing.T) {
@@ -126,6 +147,37 @@ func TestManager_AddRemoveConfig(t *testing.T) {
 	configs, _ = m.ListConfigs()
 	if len(configs) != 0 {
 		t.Errorf("Expected 0 configs after removal, got %d", len(configs))
+	}
+}
+
+func TestManager_ListConfigs_Sorted(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sshc-test-list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	m := &Manager{
+		SshDir: tmpDir,
+	}
+	_ = m.Init()
+
+	// Add configs in non-alphabetical order
+	names := []string{"zebra", "apple", "banana"}
+	for _, name := range names {
+		if err := m.AddConfig(name, "Host "+name); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	configs, err := m.ListConfigs()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []string{"apple", "banana", "zebra"}
+	if !slices.Equal(configs, expected) {
+		t.Errorf("ListConfigs() not sorted. Got: %v, Want: %v", configs, expected)
 	}
 }
 
@@ -216,5 +268,46 @@ func TestManager_UpdateConfig(t *testing.T) {
 	}
 	if !strings.Contains(res, "ProxyJump jump-host") {
 		t.Errorf("ProxyJump not added")
+	}
+}
+
+func TestManager_UpdateConfig_Indentation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "sshc-test-indent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	m := &Manager{
+		SshDir: tmpDir,
+	}
+	_ = m.Init()
+
+	name := "indent-test"
+	// Use 8 spaces for indentation
+	initialContent := "Host my-host\n        Hostname old-hostname\n"
+	if err := m.AddConfig(name, initialContent); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := ConfigOptions{
+		Hostname: "new-hostname",
+	}
+	if err := m.UpdateConfig(name, opts); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(m.GetConfigPath(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Hostname") {
+			if !strings.HasPrefix(line, "        ") {
+				t.Errorf("Indentation lost. Expected 8 spaces at start of line: %q", line)
+			}
+		}
 	}
 }

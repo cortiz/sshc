@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -36,16 +37,22 @@ func (m *Manager) Init() error {
 	backupFile := configFile + ".backup"
 
 	if _, err := os.Stat(configFile); err == nil {
-		// 1. backup current ssh config
-		content, err := os.ReadFile(configFile)
-		if err != nil {
-			return fmt.Errorf("failed to read ssh config for backup: %w", err)
-		}
-		if err := os.WriteFile(backupFile, content, 0600); err != nil {
-			return fmt.Errorf("failed to create backup: %w", err)
+		// 1. backup current ssh config if backup doesn't exist
+		if _, err := os.Stat(backupFile); os.IsNotExist(err) {
+			content, err := os.ReadFile(configFile)
+			if err != nil {
+				return fmt.Errorf("failed to read ssh config for backup: %w", err)
+			}
+			if err := os.WriteFile(backupFile, content, 0600); err != nil {
+				return fmt.Errorf("failed to create backup: %w", err)
+			}
 		}
 
 		// 2. Create a new ssh config with the include
+		content, err := os.ReadFile(configFile)
+		if err != nil {
+			return fmt.Errorf("failed to read ssh config: %w", err)
+		}
 		// Check if Include line already exists
 		found := false
 		for line := range strings.SplitSeq(string(content), "\n") {
@@ -128,7 +135,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "hostname ") {
 			foundFields["hostname"] = true
 			if opts.Hostname != "" {
-				indent := line[:strings.Index(lowerTrimmed, "hostname")]
+				indent := line[:strings.Index(strings.ToLower(line), "hostname")]
 				newLines = append(newLines, indent+"Hostname "+opts.Hostname)
 			} else {
 				newLines = append(newLines, line)
@@ -136,7 +143,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "user ") {
 			foundFields["user"] = true
 			if opts.User != "" {
-				indent := line[:strings.Index(lowerTrimmed, "user")]
+				indent := line[:strings.Index(strings.ToLower(line), "user")]
 				newLines = append(newLines, indent+"User "+opts.User)
 			} else {
 				newLines = append(newLines, line)
@@ -144,7 +151,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "port ") {
 			foundFields["port"] = true
 			if opts.Port != 0 {
-				indent := line[:strings.Index(lowerTrimmed, "port")]
+				indent := line[:strings.Index(strings.ToLower(line), "port")]
 				newLines = append(newLines, indent+fmt.Sprintf("Port %d", opts.Port))
 			} else {
 				newLines = append(newLines, line)
@@ -157,7 +164,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 				if absPath, err := filepath.Abs(identity); err == nil {
 					identity = absPath
 				}
-				indent := line[:strings.Index(lowerTrimmed, "identityfile")]
+				indent := line[:strings.Index(strings.ToLower(line), "identityfile")]
 				newLines = append(newLines, indent+"IdentityFile "+identity)
 			} else {
 				newLines = append(newLines, line)
@@ -165,7 +172,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "forwardagent ") {
 			foundFields["forwardagent"] = true
 			if opts.ForwardAgent != "" {
-				indent := line[:strings.Index(lowerTrimmed, "forwardagent")]
+				indent := line[:strings.Index(strings.ToLower(line), "forwardagent")]
 				newLines = append(newLines, indent+"ForwardAgent "+opts.ForwardAgent)
 			} else {
 				newLines = append(newLines, line)
@@ -173,7 +180,7 @@ func (m *Manager) UpdateConfig(name string, opts ConfigOptions) error {
 		} else if strings.HasPrefix(lowerTrimmed, "proxyjump ") {
 			foundFields["proxyjump"] = true
 			if opts.ProxyJump != "" {
-				indent := line[:strings.Index(lowerTrimmed, "proxyjump")]
+				indent := line[:strings.Index(strings.ToLower(line), "proxyjump")]
 				newLines = append(newLines, indent+"ProxyJump "+opts.ProxyJump)
 			} else {
 				newLines = append(newLines, line)
@@ -258,5 +265,6 @@ func (m *Manager) ListConfigs() ([]string, error) {
 			configs = append(configs, entry.Name())
 		}
 	}
+	slices.Sort(configs)
 	return configs, nil
 }
